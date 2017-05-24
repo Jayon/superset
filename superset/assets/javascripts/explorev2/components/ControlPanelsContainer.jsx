@@ -1,14 +1,15 @@
 /* eslint camelcase: 0 */
-import React, { PropTypes } from 'react';
+import React from 'react';
+import PropTypes from 'prop-types';
 import { bindActionCreators } from 'redux';
-import * as actions from '../actions/exploreActions';
 import { connect } from 'react-redux';
-import { Panel, Alert } from 'react-bootstrap';
+import { Alert } from 'react-bootstrap';
 import { sectionsToRender } from '../stores/visTypes';
 import ControlPanelSection from './ControlPanelSection';
 import ControlRow from './ControlRow';
 import Control from './Control';
 import controls from '../stores/controls';
+import * as actions from '../actions/exploreActions';
 
 const propTypes = {
   actions: PropTypes.object.isRequired,
@@ -43,7 +44,7 @@ class ControlPanelsContainer extends React.Component {
   render() {
     return (
       <div className="scrollbar-container">
-        <Panel className="scrollbar-content">
+        <div className="scrollbar-content">
           {this.props.alert &&
             <Alert bsStyle="warning">
               {this.props.alert}
@@ -54,7 +55,7 @@ class ControlPanelsContainer extends React.Component {
               />
             </Alert>
           }
-          {this.sectionsToRender().map((section) => (
+          {this.sectionsToRender().map(section => (
             <ControlPanelSection
               key={section.label}
               label={section.label}
@@ -77,7 +78,7 @@ class ControlPanelsContainer extends React.Component {
               ))}
             </ControlPanelSection>
           ))}
-        </Panel>
+        </div>
       </div>
     );
   }

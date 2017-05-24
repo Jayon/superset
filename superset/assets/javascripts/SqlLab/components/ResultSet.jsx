@@ -1,41 +1,46 @@
 import React from 'react';
+import PropTypes from 'prop-types';
 import { Alert, Button, ButtonGroup, ProgressBar } from 'react-bootstrap';
-import { Table } from 'reactable';
 import shortid from 'shortid';
 
 import VisualizeModal from './VisualizeModal';
 import HighlightedSql from './HighlightedSql';
+import FilterableTable from '../../components/FilterableTable/FilterableTable';
 
 const propTypes = {
-  actions: React.PropTypes.object,
-  csv: React.PropTypes.bool,
-  query: React.PropTypes.object,
-  search: React.PropTypes.bool,
-  searchText: React.PropTypes.string,
-  showSql: React.PropTypes.bool,
-  visualize: React.PropTypes.bool,
-  cache: React.PropTypes.bool,
+  actions: PropTypes.object,
+  csv: PropTypes.bool,
+  query: PropTypes.object,
+  search: PropTypes.bool,
+  showSql: PropTypes.bool,
+  visualize: PropTypes.bool,
+  cache: PropTypes.bool,
+  height: PropTypes.number.isRequired,
 };
 const defaultProps = {
   search: true,
   visualize: true,
   showSql: false,
   csv: true,
-  searchText: '',
   actions: {},
   cache: false,
 };
 
+const RESULT_SET_CONTROLS_HEIGHT = 46;
 
-class ResultSet extends React.PureComponent {
+export default class ResultSet extends React.PureComponent {
   constructor(props) {
     super(props);
     this.state = {
       searchText: '',
       showModal: false,
       data: [],
-      resultSetHeight: '0',
+      height: props.search ? props.height - RESULT_SET_CONTROLS_HEIGHT : props.height,
     };
+  }
+  componentDidMount() {
+    // only do this the first time the component is rendered/mounted
+    this.reRunQueryIfSessionTimeoutErrorOnMount();
   }
   componentWillReceiveProps(nextProps) {
     // when new results comes in, save them locally and clear in store
@@ -44,42 +49,12 @@ class ResultSet extends React.PureComponent {
       && nextProps.query.results.data.length > 0) {
       this.setState(
         { data: nextProps.query.results.data },
-        this.clearQueryResults(nextProps.query)
+        this.clearQueryResults(nextProps.query),
       );
     }
     if (nextProps.query.resultsKey
       && nextProps.query.resultsKey !== this.props.query.resultsKey) {
       this.fetchResults(nextProps.query);
-    }
-  }
-  componentWillMount() {
-    // hack to get height of result set table so it can be fixed and scroll in place
-    if (this.state.resultSetHeight === '0') {
-      // calculate result set table height
-
-      // document.getElementById('brace-editor').getBoundingClientRect().height;
-      const sqlEditorHeight = 192;
-
-      // document.getElementById('js-sql-toolbar').getBoundingClientRect().height;
-      const sqlToolbar = 30;
-
-      // document.getElementsByClassName('nav-tabs')[0].getBoundingClientRect().height * 2;
-      const tabsHeight = 88;
-
-      // document.getElementsByTagName('header')[0].getBoundingClientRect().height;
-      const headerHeight = 59;
-
-      // this needs to be hardcoded since this element is in this component and has not mounted yet
-      const resultsControlsHeight = 30;
-
-      const sum =
-        sqlEditorHeight +
-        sqlToolbar +
-        tabsHeight +
-        resultsControlsHeight +
-        headerHeight;
-
-      this.setState({ resultSetHeight: window.innerHeight - sum - 95 });
     }
   }
   getControls() {
@@ -160,6 +135,12 @@ class ResultSet extends React.PureComponent {
   reFetchQueryResults(query) {
     this.props.actions.reFetchQueryResults(query);
   }
+  reRunQueryIfSessionTimeoutErrorOnMount() {
+    const { query } = this.props;
+    if (query.errorMessage && query.errorMessage.indexOf('session timed out') > 0) {
+      this.props.actions.runQuery(query, true);
+    }
+  }
   render() {
     const query = this.props.query;
     const results = query.results;
@@ -223,28 +204,12 @@ class ResultSet extends React.PureComponent {
             />
             {this.getControls.bind(this)()}
             {sql}
-            <div className="ResultSet" style={{ height: `${this.state.resultSetHeight}px` }}>
-              <Table
-                data={data.map(function (row) {
-                  const newRow = {};
-                  for (const k in row) {
-                    const val = row[k];
-                    if (typeof(val) === 'string') {
-                      newRow[k] = val;
-                    } else {
-                      newRow[k] = JSON.stringify(val);
-                    }
-                  }
-                  return newRow;
-                })}
-                columns={results.columns.map((col) => col.name)}
-                sortable
-                className="table table-condensed table-bordered"
-                filterBy={this.state.searchText}
-                filterable={results.columns.map((c) => c.name)}
-                hideFilterInput
-              />
-            </div>
+            <FilterableTable
+              data={data}
+              orderedColumnKeys={results.columns.map(col => col.name)}
+              height={this.state.height}
+              filterText={this.state.searchText}
+            />
           </div>
         );
       }
@@ -265,5 +230,3 @@ class ResultSet extends React.PureComponent {
 }
 ResultSet.propTypes = propTypes;
 ResultSet.defaultProps = defaultProps;
-
-export default ResultSet;

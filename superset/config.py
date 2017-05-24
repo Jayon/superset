@@ -17,6 +17,11 @@ from collections import OrderedDict
 from dateutil import tz
 from flask_appbuilder.security.manager import AUTH_DB
 
+from superset.stats_logger import DummyStatsLogger
+
+# Realtime stats logger, a StatsD implementation exists
+STATS_LOGGER = DummyStatsLogger()
+
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 DATA_DIR = os.path.join(os.path.expanduser('~'), '.superset')
 if not os.path.exists(DATA_DIR):
@@ -54,7 +59,7 @@ SQLALCHEMY_DATABASE_URI = 'sqlite:///' + os.path.join(DATA_DIR, 'superset.db')
 QUERY_SEARCH_LIMIT = 1000
 
 # Flask-WTF flag for CSRF
-CSRF_ENABLED = True
+WTF_CSRF_ENABLED = True
 
 # Whether to run the web server in debug mode or not
 DEBUG = False
@@ -301,7 +306,7 @@ try:
         # Explicitly import config module that is not in pythonpath; useful
         # for case where app is being executed via pex.
         print('Loaded your LOCAL configuration at [{}]'.format(
-             os.environ[CONFIG_PATH_ENV_VAR]))
+            os.environ[CONFIG_PATH_ENV_VAR]))
         imp.load_source('superset_config', os.environ[CONFIG_PATH_ENV_VAR])
     else:
         from superset_config import *  # noqa

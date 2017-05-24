@@ -1,9 +1,11 @@
 import React from 'react';
+import PropTypes from 'prop-types';
 import { bindActionCreators } from 'redux';
 import { connect } from 'react-redux';
 import * as Actions from '../actions';
 
 const $ = require('jquery');
+
 const QUERY_UPDATE_FREQ = 2000;
 const QUERY_UPDATE_BUFFER_MS = 5000;
 
@@ -19,7 +21,8 @@ class QueryAutoRefresh extends React.PureComponent {
     const { queries } = this.props;
     const queryKeys = Object.keys(queries);
     const queriesAsArray = queryKeys.map(key => queries[key]);
-    return queriesAsArray.some(q => q.state === 'running' || q.state === 'started');
+    return queriesAsArray.some(q =>
+      ['running', 'started', 'pending', 'fetching'].indexOf(q.state) >= 0);
   }
   startTimer() {
     if (!(this.timer)) {
@@ -33,7 +36,7 @@ class QueryAutoRefresh extends React.PureComponent {
   stopwatch() {
     // only poll /superset/queries/ if there are started or running queries
     if (this.shouldCheckForQueries()) {
-      const url = '/superset/queries/' + (this.props.queriesLastUpdate - QUERY_UPDATE_BUFFER_MS);
+      const url = `/superset/queries/${this.props.queriesLastUpdate - QUERY_UPDATE_BUFFER_MS}`;
       $.getJSON(url, (data) => {
         if (Object.keys(data).length > 0) {
           this.props.actions.refreshQueries(data);
@@ -46,9 +49,9 @@ class QueryAutoRefresh extends React.PureComponent {
   }
 }
 QueryAutoRefresh.propTypes = {
-  queries: React.PropTypes.object.isRequired,
-  actions: React.PropTypes.object.isRequired,
-  queriesLastUpdate: React.PropTypes.number.isRequired,
+  queries: PropTypes.object.isRequired,
+  actions: PropTypes.object.isRequired,
+  queriesLastUpdate: PropTypes.number.isRequired,
 };
 
 function mapStateToProps(state) {

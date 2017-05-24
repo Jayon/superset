@@ -31,6 +31,7 @@ from superset import app, utils, cache
 from superset.utils import DTTM_ALIAS
 
 config = app.config
+stats_logger = config.get('STATS_LOGGER')
 
 
 class BaseViz(object):
@@ -42,13 +43,12 @@ class BaseViz(object):
     credits = ""
     is_timeseries = False
 
-    def __init__(self, datasource, form_data, slice_=None):
+    def __init__(self, datasource, form_data):
         if not datasource:
             raise Exception("Viz is missing a datasource")
         self.datasource = datasource
         self.request = request
         self.viz_type = form_data.get("viz_type")
-        self.slice = slice_
         self.form_data = form_data
 
         self.query = ""
@@ -112,7 +112,7 @@ class BaseViz(object):
         """Building a query object"""
         form_data = self.form_data
         groupby = form_data.get("groupby") or []
-        metrics = form_data.get("metrics") or ['count']
+        metrics = form_data.get("metrics") or []
 
         # extra_filters are temporary/contextual filters that are external
         # to the slice definition. We use those for dynamic interactive
@@ -131,7 +131,9 @@ class BaseViz(object):
         # [column_name in list_of_values]. `__` prefix is there to avoid
         # potential conflicts with column that would be named `from` or `to`
         since = (
-            extra_filters.get('__from') or form_data.get("since", "1 year ago")
+            extra_filters.get('__from') or
+            form_data.get("since") or
+            config.get("SUPERSET_DEFAULT_SINCE", "1 year ago")
         )
 
         from_dttm = utils.parse_human_datetime(since)
@@ -178,14 +180,14 @@ class BaseViz(object):
             'timeseries_limit': limit,
             'extras': extras,
             'timeseries_limit_metric': timeseries_limit_metric,
+            'form_data': form_data,
         }
         return d
 
     @property
     def cache_timeout(self):
-
-        if self.slice and self.slice.cache_timeout:
-            return self.slice.cache_timeout
+        if self.form_data.get('cache_timeout'):
+            return int(self.form_data.get('cache_timeout'))
         if self.datasource.cache_timeout:
             return self.datasource.cache_timeout
         if (
@@ -213,6 +215,7 @@ class BaseViz(object):
             payload = cache.get(cache_key)
 
         if payload:
+            stats_logger.incr('loaded_from_source')
             is_cached = True
             try:
                 cached_data = zlib.decompress(payload)
@@ -226,6 +229,7 @@ class BaseViz(object):
             logging.info("Serving from cache")
 
         if not payload:
+            stats_logger.incr('loaded_from_cache')
             data = None
             is_cached = False
             cache_timeout = self.cache_timeout
@@ -251,7 +255,7 @@ class BaseViz(object):
                 'status': self.status,
                 'stacktrace': stacktrace,
             }
-            payload['cached_dttm'] = datetime.now().isoformat().split('.')[0]
+            payload['cached_dttm'] = datetime.utcnow().isoformat().split('.')[0]
             logging.info("Caching for the next {} seconds".format(
                 cache_timeout))
             data = self.json_dumps(payload)
@@ -1064,7 +1068,7 @@ class DistributionBarViz(DistributionPieViz):
     is_timeseries = False
 
     def query_obj(self):
-        d = super(DistributionPieViz, self).query_obj()  # noqa
+        d = super(DistributionBarViz, self).query_obj()  # noqa
         fd = self.form_data
         gb = fd.get('groupby') or []
         cols = fd.get('columns') or []
@@ -1225,6 +1229,35 @@ class DirectedForceViz(BaseViz):
         return df.to_dict(orient='records')
 
 
+class CountryMapViz(BaseViz):
+
+    """A country centric"""
+
+    viz_type = "country_map"
+    verbose_name = _("Country Map")
+    is_timeseries = False
+    credits = 'From bl.ocks.org By john-guerra'
+
+    def query_obj(self):
+        qry = super(CountryMapViz, self).query_obj()
+        qry['metrics'] = [
+            self.form_data['metric']]
+        qry['groupby'] = [self.form_data['entity']]
+        return qry
+
+    def get_data(self, df):
+        from superset.data import countries
+        fd = self.form_data
+        cols = [fd.get('entity')]
+        metric = fd.get('metric')
+        cols += [metric]
+        ndf = df[cols]
+        df = ndf
+        df.columns = ['country_id', 'metric']
+        d = df.to_dict(orient='records')
+        return d
+
+
 class WorldMapViz(BaseViz):
 
     """A country centric world map"""
@@ -1318,6 +1351,9 @@ class IFrameViz(BaseViz):
     verbose_name = _("iFrame")
     credits = 'a <a href="https://github.com/airbnb/superset">Superset</a> original'
     is_timeseries = False
+
+    def get_df(self):
+       return None
 
 
 class ParallelCoordinatesViz(BaseViz):
@@ -1535,6 +1571,7 @@ viz_types_list = [
     SunburstViz,
     DirectedForceViz,
     SankeyViz,
+    CountryMapViz,
     WorldMapViz,
     FilterBoxViz,
     IFrameViz,

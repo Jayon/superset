@@ -10,7 +10,7 @@ import unittest
 
 from flask_appbuilder.security.sqla import models as ab_models
 from superset import db, utils, appbuilder, sm
-from superset.models import core as models
+from superset.models.sql_lab import Query
 
 from .base_tests import SupersetTestCase
 
@@ -22,7 +22,7 @@ class SqlLabTests(SupersetTestCase):
         super(SqlLabTests, self).__init__(*args, **kwargs)
 
     def run_some_queries(self):
-        db.session.query(models.Query).delete()
+        db.session.query(Query).delete()
         db.session.commit()
         self.run_sql(
             "SELECT * FROM ab_user",
@@ -39,7 +39,7 @@ class SqlLabTests(SupersetTestCase):
         self.logout()
 
     def tearDown(self):
-        db.session.query(models.Query).delete()
+        db.session.query(Query).delete()
         db.session.commit()
         self.logout()
 
@@ -59,7 +59,9 @@ class SqlLabTests(SupersetTestCase):
         main_db_permission_view = (
             db.session.query(ab_models.PermissionView)
             .join(ab_models.ViewMenu)
+            .join(ab_models.Permission)
             .filter(ab_models.ViewMenu.name == '[main].(id:1)')
+            .filter(ab_models.Permission.name == 'database_access')
             .first()
         )
         astronaut = sm.add_role("Astronaut")
@@ -77,7 +79,7 @@ class SqlLabTests(SupersetTestCase):
                 astronaut,
                 password='general')
         data = self.run_sql('SELECT * FROM ab_user', "3", user_name='gagarin')
-        db.session.query(models.Query).delete()
+        db.session.query(Query).delete()
         db.session.commit()
         self.assertLess(0, len(data['data']))
 
@@ -102,7 +104,7 @@ class SqlLabTests(SupersetTestCase):
         self.assertEquals(4, len(data))
 
         now = datetime.now() + timedelta(days=1)
-        query = db.session.query(models.Query).filter_by(
+        query = db.session.query(Query).filter_by(
             sql='SELECT * FROM ab_user LIMIT 1').first()
         query.changed_on = now
         db.session.commit()
@@ -176,11 +178,11 @@ class SqlLabTests(SupersetTestCase):
         self.run_some_queries()
         self.login('admin')
         first_query_time = (
-            db.session.query(models.Query)
+            db.session.query(Query)
             .filter_by(sql='SELECT * FROM ab_user').one()
         ).start_time
         second_query_time = (
-            db.session.query(models.Query)
+            db.session.query(Query)
             .filter_by(sql='SELECT * FROM ab_permission').one()
         ).start_time
         # Test search queries on time filter

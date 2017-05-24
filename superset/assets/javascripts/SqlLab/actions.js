@@ -1,5 +1,7 @@
+/* global notify */
 import shortid from 'shortid';
 import { now } from '../modules/dates';
+
 const $ = require('jquery');
 
 export const RESET_STATE = 'RESET_STATE';
@@ -33,9 +35,23 @@ export const QUERY_FAILED = 'QUERY_FAILED';
 export const CLEAR_QUERY_RESULTS = 'CLEAR_QUERY_RESULTS';
 export const REMOVE_DATA_PREVIEW = 'REMOVE_DATA_PREVIEW';
 export const CHANGE_DATA_PREVIEW_ID = 'CHANGE_DATA_PREVIEW_ID';
+export const SAVE_QUERY = 'SAVE_QUERY';
 
 export function resetState() {
   return { type: RESET_STATE };
+}
+
+export function saveQuery(query) {
+  const url = '/savedqueryviewapi/api/create';
+  $.ajax({
+    type: 'POST',
+    url,
+    data: query,
+    success: () => notify.success('Your query was saved'),
+    error: () => notify.error('Your query could not be saved'),
+    dataType: 'json',
+  });
+  return { type: SAVE_QUERY };
 }
 
 export function startQuery(query) {
@@ -98,7 +114,6 @@ export function fetchQueryResults(query) {
 export function runQuery(query) {
   return function (dispatch) {
     dispatch(startQuery(query));
-    const sqlJsonUrl = '/superset/sql_json/';
     const sqlJsonRequest = {
       client_id: query.id,
       database_id: query.dbId,
@@ -111,6 +126,7 @@ export function runQuery(query) {
       tmp_table_name: query.tempTableName,
       select_as_cta: query.ctas,
     };
+    const sqlJsonUrl = '/superset/sql_json/' + location.search;
     $.ajax({
       type: 'POST',
       dataType: 'json',
@@ -135,6 +151,9 @@ export function runQuery(query) {
         } else if (msg === null) {
           msg = `[${textStatus}] ${errorThrown}`;
         }
+        if (msg.indexOf('The CSRF token is missing') > 0) {
+          msg = 'Your session timed out, please refresh your page and try again.';
+        }
         dispatch(queryFailed(query, msg));
       },
     });
@@ -145,15 +164,17 @@ export function postStopQuery(query) {
   return function (dispatch) {
     const stopQueryUrl = '/superset/stop_query/';
     const stopQueryRequestData = { client_id: query.id };
+    dispatch(stopQuery(query));
     $.ajax({
       type: 'POST',
       dataType: 'json',
       url: stopQueryUrl,
       data: stopQueryRequestData,
       success() {
-        if (!query.runAsync) {
-          dispatch(stopQuery(query));
-        }
+        notify.success('Query was stopped.');
+      },
+      error() {
+        notify.error('Failed at stopping query.');
       },
     });
   };
@@ -228,6 +249,18 @@ export function mergeTable(table, query) {
 
 export function addTable(query, tableName, schemaName) {
   return function (dispatch) {
+    let table = {
+      dbId: query.dbId,
+      queryEditorId: query.id,
+      schema: schemaName,
+      name: tableName,
+    };
+    dispatch(mergeTable(Object.assign({}, table, {
+      isMetadataLoading: true,
+      isExtraMetadataLoading: true,
+      expanded: false,
+    })));
+
     let url = `/superset/table/${query.dbId}/${tableName}/${schemaName}/`;
     $.get(url, (data) => {
       const dataPreviewQuery = {
@@ -241,36 +274,33 @@ export function addTable(query, tableName, schemaName) {
         ctas: false,
       };
       // Merge table to tables in state
-      dispatch(mergeTable(
-        Object.assign(data, {
-          dbId: query.dbId,
-          queryEditorId: query.id,
-          schema: schemaName,
-          expanded: true,
-        }), dataPreviewQuery)
-      );
+      const newTable = Object.assign({}, table, data, {
+        expanded: true,
+        isMetadataLoading: false,
+      });
+      dispatch(mergeTable(newTable, dataPreviewQuery));
       // Run query to get preview data for table
       dispatch(runQuery(dataPreviewQuery));
     })
     .fail(() => {
-      dispatch(
-        addAlert({
-          msg: 'Error occurred while fetching metadata',
-          bsStyle: 'danger',
-        })
-      );
+      const newTable = Object.assign({}, table, {
+        isMetadataLoading: false,
+      });
+      dispatch(mergeTable(newTable));
+      notify.error('Error occurred while fetching table metadata');
     });
 
     url = `/superset/extra_table_metadata/${query.dbId}/${tableName}/${schemaName}/`;
     $.get(url, (data) => {
-      const table = {
-        dbId: query.dbId,
-        queryEditorId: query.id,
-        schema: schemaName,
-        name: tableName,
-      };
-      Object.assign(table, data);
+      table = Object.assign({}, table, data, { isExtraMetadataLoading: false });
       dispatch(mergeTable(table));
+    })
+    .fail(() => {
+      const newTable = Object.assign({}, table, {
+        isExtraMetadataLoading: false,
+      });
+      dispatch(mergeTable(newTable));
+      notify.error('Error occurred while fetching table metadata');
     });
   };
 }
@@ -328,6 +358,27 @@ export function popStoredQuery(urlId) {
         };
         dispatch(addQueryEditor(queryEditorProps));
       },
+      error: () => notify.error("The query couldn't be loaded"),
+    });
+  };
+}
+export function popSavedQuery(saveQueryId) {
+  return function (dispatch) {
+    $.ajax({
+      type: 'GET',
+      url: `/savedqueryviewapi/api/get/${saveQueryId}`,
+      success: (data) => {
+        const sq = data.result;
+        const queryEditorProps = {
+          title: sq.label,
+          dbId: sq.db_id ? parseInt(sq.db_id, 10) : null,
+          schema: sq.schema,
+          autorun: false,
+          sql: sq.sql,
+        };
+        dispatch(addQueryEditor(queryEditorProps));
+      },
+      error: () => notify.error("The query couldn't be loaded"),
     });
   };
 }
